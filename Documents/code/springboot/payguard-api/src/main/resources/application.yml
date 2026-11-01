@@ -1,0 +1,141 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: payguard
+
+  # ─────────────────────────────────────────
+  #  PostgreSQL / JPA
+  # ─────────────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://localhost:5432/momm
+    username: postgres
+    password: 12345678
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  # ─────────────────────────────────────────
+  #  Flyway
+  # ─────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false          # Set true only when adding Flyway to an existing DB
+    validate-on-migrate: true
+    encoding: UTF-8
+    sql-migration-prefix: V
+    sql-migration-separator: __
+    sql-migration-suffixes: .sql
+
+  jpa:
+    hibernate:
+      ddl-auto: none                     # Flyway manages the schema; Hibernate only validates/reads
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  # ─────────────────────────────────────────
+  #  Redis
+  # ─────────────────────────────────────────
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          min-idle: 2
+
+  # ─────────────────────────────────────────
+  #  RabbitMQ
+  # ─────────────────────────────────────────
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: manual          # Manual ACK for reliable processing
+        retry:
+          enabled: false                  # We handle retry logic manually via DLQ/TTL
+        prefetch: 1                       # Process one message at a time per consumer
+
+  # ─────────────────────────────────────────
+  #  Application-Specific Properties
+  # ─────────────────────────────────────────
+app:
+  idempotency:
+    ttl-seconds: 86400                    # 24 hours — idempotency key TTL in Redis
+
+  signature:
+    # In production, store this in a Vault / AWS Secrets Manager
+    # Keyed by merchant_id for multi-merchant support
+    merchant-secrets:
+      MERCH-001: "s3cr3tKey!NicePay2024"
+      MERCH-002: "anotherS3cr3tKey!2024"
+
+  webhook:
+    # Merchant webhook URL map — in production, fetch from DB/config service
+    merchant-webhook-urls:
+      MERCH-001: "https://webhook.site/00e9904e-c706-4401-8c70-129bf46a0c4d"
+      MERCH-002: "https://webhook.site/00e9904e-c706-4401-8c70-129bf46a0c4d"
+    connect-timeout-ms: 3000
+    read-timeout-ms: 5000
+
+  rabbitmq:
+    exchange: payment.exchange
+    routing-key: payment.callback
+    queue: payment.callback.queue
+    dlx: payment.dlx
+    dlq: payment.dlq
+    dlq-routing-key: payment.dead
+    # TTL before a rejected message in the main queue is sent to DLQ (in ms)
+    message-ttl-ms: 30000
+    max-retry-attempts: 3
+
+# ─────────────────────────────────────────
+#  Springdoc / OpenAPI
+# ─────────────────────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    try-it-out-enabled: true
+
+# ─────────────────────────────────────────
+#  Management / Actuator
+# ─────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,rabbitmq
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    id.payguard.api: DEBUG                  # Fixed: was id.nicepay.gateway (wrong package — logs were suppressed)
+    org.springframework.amqp: DEBUG         # Raised to DEBUG for RabbitMQ diagnostics
+    org.springframework.rabbit: DEBUG
+    com.rabbitmq: INFO
+    org.hibernate.SQL: DEBUG
+
+
